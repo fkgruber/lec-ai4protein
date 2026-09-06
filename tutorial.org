@@ -1,0 +1,687 @@
+#+TITLE:Computational Protein Tutorial
+#+AUTHOR: Fred K. Gruber
+#+email: fred.gruber@modernatx.com
+#+PROPERTY: header-args :tangle yes :eval no-export
+#+PROPERTY: header-args:R :session *R* :exports both :colnames yes
+#+PROPERTY: header-args:python :session *pytuto* :exports both :colnames yes :python .venv/bin/python :results output
+#+OPTIONS: ^:{}
+-----
+
+* Introduction
+Here I'm converting the different markdown files in this repo into an orgfile while testing everything. Original is here https://github.com/sungsoo-ahn/lec-ai4protein
+
+
+* Environment
+#+begin_src bash
+uv venv
+source .venv/bin/activate  # or `.venv\Scripts\activate` on Windows
+uv pip install -e .
+#+end_src
+
+* Course
+
+** Foundational lectures
+
+*** Lecture 1: Python and Data Science Basics for Protein AI
+
+**** Introduction: Why Data Handling is the Foundation of Protein AI
+#+begin_quote
+Imagine you are handed a dataset containing millions of protein sequences, each one a string of letters representing the amino acid building blocks of life. Your goal is to train a neural network that can predict whether a new protein will fold correctly, bind to a drug molecule, or cause disease when mutated. Before you can build any sophisticated deep learning model, you face a fundamental question: *how do you even represent a protein in a way that a computer can understand?*
+
+This question sits at the heart of computational biology, and it is why mastering data handling is the essential first step in your journey into protein AI. Proteins are not simple data points like house prices or customer reviews. They are complex three-dimensional machines with variable lengths, intricate geometries, and evolutionary relationships that span billions of years. The way you load, transform, and prepare protein data will determine whether your models succeed or fail.
+
+In this lecture, we will build the foundational toolkit you need to work with protein data in Python. We will explore NumPy for numerical computations, Pandas for tabular data analysis, and specialized libraries for reading protein file formats. More importantly, we will understand *why* each of these tools matters in the context of protein AI. By the end, you will be equipped to take raw biological data and transform it into the numerical representations that power modern machine learning models.
+
+#+end_quote
+
+Proteins are more complicated to represent for machine learning models because:
+- have different length
+- sequence represent complicated 3D structures
+- Has evolutionary relationships.
+
+While her they use pandas I will transform to polars.
+
+
+**** Learning Objectives
+#+begin_quote
+
+By the end of this lecture, you will be able to:
+1. Perform efficient numerical computations using NumPy arrays
+2. Manipulate and analyze tabular protein data with Pandas
+3. Load and parse common protein file formats (FASTA for sequences, PDB for structures)
+4. Prepare biological data for machine learning pipelines while avoiding common pitfalls
+#+end_quote
+
+This is really fundamental abilities that we need to know just to prepare the data.
+THe only difference here is that I will use polars.
+
+**** 1. NumPy: The Language of Numerical Protein Data
+#+begin_quote
+When biologists think about proteins, they think about sequences of amino acids and complex three-dimensional shapes. But when computers process proteins, they think in numbers. Every protein sequence becomes a matrix of values. Every atomic position becomes a triplet of coordinates. Every evolutionary relationship becomes a numerical distance. NumPy, the Numerical Python library, is the translator that bridges these two worlds.
+
+Why is NumPy so essential? Consider a simple task: comparing two protein structures to see how similar they are. This requires computing the distance between every pair of corresponding atoms, potentially thousands of calculations. If you wrote this as nested Python loops, it would take seconds or even minutes. With NumPy, the same calculation completes in milliseconds. This speed advantage becomes critical when you are training deep learning models that process millions of protein examples.
+#+end_quote
+
+***** 1.1 Representing Proteins as Arrays
+#+begin_quote
+The fundamental data structure in NumPy is the **array**, a grid of values that can have any number of dimensions. For protein AI, we use arrays to represent three main types of data:
+
+- **Sequence encodings**: A protein sequence like "MVLSPADKTN..." becomes a matrix where each row represents a residue position and each column represents one of the 20 standard amino acids.
+- **3D coordinates**: Every atom in a protein structure has an (x, y, z) position in space, naturally represented as an N-by-3 array where N is the number of atoms.
+- **Contact maps and distance matrices**: These N-by-N matrices capture which residues are close together in the folded structure, providing a simplified view of protein topology.
+
+Let us create our first protein-related arrays:
+
+#+end_quote
+
+#+begin_src python
+import numpy as np
+
+sequence_encoding=np.zeros((100,20))  # 100 residues, 20 amino acids
+coordinates = np.random.randn(76, 3) # 76 CA atoms, xyz
+
+print(f"Shape: {coordinates.shape}")
+print(f"Dtype: {coordinates.dtype}")
+print(f"Size: {coordinates.size}")
+#+end_src
+
+#+RESULTS:
+: Shape: (76, 3)
+: Dtype: float64
+: Size: 228
+
+#+begin_quote
+The `shape` tells us the dimensions of our array, which for coordinates means 76 atoms with 3 coordinates each. The `dtype` specifies the numerical precision (float64 means 64-bit floating point numbers, offering about 15 decimal digits of precision). The `size` is simply the total number of elements. Understanding these properties is crucial for debugging and memory management when working with large protein datasets.
+
+#+end_quote
+
+***** 1.2 Broadcasting: Elegant Operations Across Dimensions
+#+begin_quote
+One of NumPy's most powerful features is **broadcasting**, which allows operations between arrays of different shapes by automatically expanding the smaller array to match the larger one. This might sound abstract, but it solves a very concrete problem in protein structure analysis.
+
+Consider centering a protein structure, a common preprocessing step that moves the center of mass to the origin. Without broadcasting, you would need to write a loop that subtracts the centroid from each atom individually. With broadcasting, a single line suffices:
+
+#+end_quote
+
+#+begin_src python
+coords = np.random.rand(100, 3)  # (100, 3)
+centroid = coords.mean(axis=0)   # (3,)
+centered = coords - centroid     # (100, 3)
+#+end_src
+
+#+begin_quote
+What happens here? The centroid is a 1D array with 3 values (the mean x, mean y, and mean z). When we subtract it from coords, NumPy automatically broadcasts the centroid across all 100 rows. Each atom's coordinates get the same centroid subtracted. This operation is not only elegant but also runs at C-level speed, far faster than any Python loop.
+
+Broadcasting follows a simple rule: dimensions are compatible when they are equal or when one of them is 1. NumPy automatically expands dimensions of size 1 to match the other array. This rule will become second nature as you work through more examples.
+
+#+end_quote
+
+here the second dimension on the centroid is 1. is it gets expanded to fit the 100.
+
+***** 1.3 Distance Matrices: The Fingerprint of Protein Structure
+#+begin_quote
+If there is one operation that defines structural biology, it is computing distances between atoms. A **distance matrix** captures the pairwise distances between all atoms in a structure, creating an N-by-N symmetric matrix that serves as a fingerprint of the protein's fold.
+
+Why are distance matrices so important? Because they encode the essential information about protein structure in a rotation- and translation-invariant form. **Two proteins with identical distance matrices have identical structures, regardless of how they are oriented in space**. This property makes distance matrices invaluable for structure comparison, contact prediction, and as input features for neural networks.
+
+The mathematical operation is straightforward: for each pair of atoms i and j, compute the Euclidean distance. However, implementing this efficiently requires a clever use of broadcasting:
+
+#+end_quote
+
+#+begin_src python
+def compute_distance_matrix(coords):
+    """
+    Compute pairwise distances between all atoms.
+
+    Args:
+        coords: (N, 3) array of atom coordinates
+
+    Returns:
+        (N, N) distance matrix
+    """
+    # Using broadcasting: (N, 1, 3) - (1, N, 3) -> (N, N, 3)
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+    return np.sqrt(np.sum(diff ** 2, axis=1))
+#+end_src
+- coords[:, np.newaxis, :] reshapes our (N, 3) array to (N, 1, 3) by inserting a new axis
+- coords[np.newaxis, :, :] creates a (1, N, 3) array.
+- broadcasting expands both to (N, N, 3)
+
+Need to see what does broadcast look like to really understand this line.
+
+#+begin_src python
+coords = np.random.rand(10, 3)  #
+print(coords.shape)
+#+end_src
+
+#+RESULTS:
+: (10, 3)
+
+#+begin_src python
+print(coords[:,np.newaxis,:].shape)
+#+end_src
+
+#+RESULTS:
+: (10, 1, 3)
+
+#+begin_src python
+a_broadcast = np.broadcast_to(
+    coords[:, np.newaxis, :],
+    (coords.shape[0], coords.shape[0], coords.shape[1])
+)
+print(a_broadcast.shape)
+#+end_src
+
+#+RESULTS:
+: (10, 10, 3)
+
+#+begin_src python
+print(a_broadcast[:,0,:])
+#+end_src
+
+#+RESULTS:
+#+begin_example
+[[0.98079595 0.55792797 0.01281524]
+ [0.56408948 0.65016835 0.63496197]
+ [0.33999819 0.338509   0.30697416]
+ [0.5294245  0.2042276  0.88460775]
+ [0.27977098 0.19838926 0.07878266]
+ [0.13032639 0.15580138 0.28333781]
+ [0.01657106 0.71458664 0.13387245]
+ [0.33886536 0.46027529 0.202107  ]
+ [0.36229141 0.84283967 0.1899393 ]
+ [0.85333142 0.30396249 0.16790256]]
+#+end_example
+#+begin_src python
+print(a_broadcast[:,1,:])
+#+end_src
+
+#+RESULTS:
+#+begin_example
+[[0.98079595 0.55792797 0.01281524]
+ [0.56408948 0.65016835 0.63496197]
+ [0.33999819 0.338509   0.30697416]
+ [0.5294245  0.2042276  0.88460775]
+ [0.27977098 0.19838926 0.07878266]
+ [0.13032639 0.15580138 0.28333781]
+ [0.01657106 0.71458664 0.13387245]
+ [0.33886536 0.46027529 0.202107  ]
+ [0.36229141 0.84283967 0.1899393 ]
+ [0.85333142 0.30396249 0.16790256]]
+#+end_example
+
+#+begin_src python
+b_broadcast = np.broadcast_to(coords[np.newaxis, :, :],
+                       (coords.shape[0], coords.shape[0], coords.shape[1]))
+
+print(b_broadcast.shape)
+
+
+#+end_src
+
+#+RESULTS:
+: (10, 10, 3)
+
+this is equivalent to compares all possible combinations
+
+#+begin_src python
+print(a_broadcast[0, 0, 0])
+print(b_broadcast[0, 0, 0])
+
+print(a_broadcast[1, 0, 0])
+print(b_broadcast[1, 0, 0])
+
+print(a_broadcast[2, 0, 0])
+print(b_broadcast[2, 0, 0])
+#+end_src
+
+#+RESULTS:
+: 0.9807959460788911
+: 0.9807959460788911
+: 0.5640894772136724
+: 0.9807959460788911
+: 0.3399981893102134
+: 0.9807959460788911
+
+#+begin_src python
+compadf = np.zeros(((coords.shape[1] * coords.shape[0]) ** 2, 2 ))
+
+counter = 0
+for ii in range(0, a_broadcast.shape[0]):
+    for jj in range(0, a_broadcast.shape[1]):
+        for kk in range(0, a_broadcast.shape[2]):
+            compadf[counter, 0] = a_broadcast[ii, jj, kk]
+            compadf[counter, 1] = b_broadcast[ii, jj, kk]
+            counter += 1
+
+import polars as pl
+print(pl.DataFrame(compadf))
+#+end_src
+
+#+RESULTS:
+#+begin_example
+shape: (900, 2)
+┌──────────┬──────────┐
+│ column_0 ┆ column_1 │
+│ ---      ┆ ---      │
+│ f64      ┆ f64      │
+╞══════════╪══════════╡
+│ 0.980796 ┆ 0.980796 │
+│ 0.557928 ┆ 0.557928 │
+│ 0.012815 ┆ 0.012815 │
+│ 0.980796 ┆ 0.564089 │
+│ 0.557928 ┆ 0.650168 │
+│ …        ┆ …        │
+│ 0.0      ┆ 0.0      │
+│ 0.0      ┆ 0.0      │
+│ 0.0      ┆ 0.0      │
+│ 0.0      ┆ 0.0      │
+│ 0.0      ┆ 0.0      │
+└──────────┴──────────┘
+#+end_example
+
+#+begin_quote
+This single function will appear throughout your protein AI journey. It is used for contact map prediction, structure validation, and as a key input to geometric deep learning models like AlphaFold.
+
+
+#+end_quote
+
+***** 1.4 Linear Algebra: The Mathematics of Structure Alignment
+#+begin_quote
+Beyond basic arithmetic, protein structure analysis relies heavily on linear algebra operations like matrix multiplication and singular value decomposition (SVD). These operations enable structure alignment, a fundamental task where we superimpose two protein structures to measure their similarity.
+
+The **Kabsch algorithm** is the gold standard for finding the optimal rotation to align two sets of corresponding points. It uses SVD to decompose the covariance matrix between the two structures and extract the rotation that minimizes root-mean-square deviation (RMSD). Understanding this algorithm is essential for evaluating structure prediction models:
+#+end_quote
+
+we need to rotate the structures to be able to compare them because they may be identical but rotated differently.
+
+#+begin_src python
+def kabsch_rotation(mobile, target):
+    H = mobile.T @ target # Compute covariance matrix @ matric multiplication
+    U, S, Vt = np.linalg.svd(H) ## SVD decomposition
+    R = Vt.T @ U.T # Compute rotation matrix
+    # Handle reflection case
+    if np.linalg.det(R) < 0:
+        Vt[-1, :] *= -1
+        R = Vt.T @ U.T
+    return R
+
+## based on wikipedia:
+def kabsch_rotation2(mobile, target):
+    H = mobile.T @ target # Compute covariance matrix @ matric multiplication
+    U, S, Vt = np.linalg.svd(H) ## SVD decomposition
+    d = np.linalg.det(U) * np.linalg.det(Vt.T) # rotation correction
+    dm = np.diag(np.array([1, 1, d]))
+    R = Vt.T @ dm @ U.T # Compute rotation matrix
+
+    return R
+#+end_src
+
+see https://en.wikipedia.org/wiki/Kabsch_algorithm
+
+#+begin_quote
+The SVD decomposes the covariance matrix H into three components. The rotation matrix R combines the U and V matrices to find the optimal alignment. The reflection check ensures we get a proper rotation (not a mirror flip), which is crucial for biological correctness.
+
+
+#+end_quote
+
+
+***** 2. Polars: Wrangling tabular protein data.
+
+****** 2.1 Loading and Exploring Protein datasets
+
+#+begin_quote
+Most protein machine learning datasets come as CSV files with sequences and labels. The DeepSol dataset, for example, contains protein sequences labeled as soluble (1) or insoluble (0), a classic binary classification task:
+#+end_quote
+
+#+begin_src python
+import polars as pl
+
+base = (
+    "https://raw.githubusercontent.com/"
+    "sameerkhurana10/DSOL_rv0.2/master/data/"
+)
+
+seq = pl.read_csv(
+    base + "train_src",
+    has_header=False,
+    new_columns=["sequence"],
+)
+
+label = pl.read_csv(
+    base + "train_tgt",
+    has_header=False,
+    new_columns=["label"],
+)
+
+df = pl.concat([seq, label], how="horizontal_extend")
+df.write_csv("data/deepsol.csv")
+print(df.head())
+#+end_src
+
+#+RESULTS:
+#+begin_example
+shape: (5, 2)
+┌─────────────────────────────────┬───────┐
+│ sequence                        ┆ label │
+│ ---                             ┆ ---   │
+│ str                             ┆ i64   │
+╞═════════════════════════════════╪═══════╡
+│ GMILKTNLFGHTYQFKSITDVLAKANEEKS… ┆ 1     │
+│ MAHHHHHHMSFFRMKRRLNFVVKRGIEELW… ┆ 0     │
+│ MGSDKIHHHHHHMEKSIQDTIHGVIKLEDW… ┆ 0     │
+│ MEKYIHSVEDYHRLISYLENNLNYEDSVVN… ┆ 0     │
+│ MSLTDSFTVRSIEGVCFRYPLATPVVTSFG… ┆ 0     │
+└─────────────────────────────────┴───────┘
+#+end_example
+
+#+begin_src python
+# Basic statistics
+print(f"dataset size: {len(df)}")
+print(f"Class distribution: \n{df.group_by("label").count()}")
+
+# Sequence length analysis
+df = df.with_columns(pl.col("sequence").str.len_chars().alias("length"))
+print(f"Length range: {df['length'].min()} - {df['length'].max()}")
+print(f"Mean length: {df['length'].mean():.1f}")
+#+end_src
+
+#+RESULTS:
+#+begin_example
+dataset size: 62478
+Class distribution:
+shape: (2, 2)
+┌───────┬───────┐
+│ label ┆ count │
+│ ---   ┆ ---   │
+│ i64   ┆ u32   │
+╞═══════╪═══════╡
+│ 0     ┆ 36403 │
+│ 1     ┆ 26075 │
+└───────┴───────┘
+Length range: 19 - 1691
+Mean length: 298.6
+#+end_example
+#+begin_quote
+Sequence length analysis is particularly important for proteins. Unlike images that can be resized to a fixed dimension, proteins have intrinsic lengths ranging from tens to thousands of amino acids. This variability affects model architecture choices and computational requirements.
+#+end_quote
+
+****** 2.2 Filtering and selecting subsets
+#+begin_src python
+#filter by length
+short_proteins = df.filter(pl.col("length") < 200)
+
+## select soluble proteins
+soluble = df.filter(pl.col("label") == 1)
+
+## comple queries
+filtered = (df
+            .filter(pl.col("length") >= 50,
+                    pl.col("length") <= 500,
+                    pl.col("label") == 1))
+#+end_src
+
+****** 2.3 Feature Engineering: From Sequences to Numbers
+
+#+begin_quote
+Raw protein sequences are strings of letters, but machine learning models need numbers. **Feature engineering** transforms sequences into numerical representations that capture biologically meaningful properties. The simplest approach is amino acid composition: the fraction of each amino acid type in the sequence.
+#+end_quote
+
+We need a numerical representation but also want it to be biologically meaninful and help answer the biological questions of interest.
+
+#+begin_src python
+all_amino = 'ACDEFGHIKLMNPQRSTVWY'
+
+def aa_composition(sequence):
+    """Compute amino acid frequencies"""
+    from collections import Counter
+    counts = Counter(sequence)
+    total = len(sequence)
+    return {aa: counts.get(aa, 0) / total for aa in all_amino}
+
+import polars as pl
+df = pl.read_csv("data/deepsol.csv")
+
+aa_dtype = pl.Struct({aa: pl.Float64 for aa in all_amino})
+
+aa_df = (
+    df
+    .with_columns(
+        pl.col("sequence")
+        .map_elements(aa_composition, return_dtype=aa_dtype)
+        .alias("aa_comp")
+    )
+    .unnest("aa_comp")
+)
+
+#+end_src
+#+begin_src python
+print(aa_df.head())
+#+end_src
+
+#+RESULTS:
+#+begin_example
+shape: (5, 23)
+┌─────────────────────────────────┬───────┬────────┬───────────┬───┬──────────┬──────────┬───────────┬──────────┐
+│ sequence                        ┆ label ┆ length ┆ A         ┆ … ┆ T        ┆ V        ┆ W         ┆ Y        │
+│ ---                             ┆ ---   ┆ ---    ┆ ---       ┆   ┆ ---      ┆ ---      ┆ ---       ┆ ---      │
+│ str                             ┆ i64   ┆ i64    ┆ f64       ┆   ┆ f64      ┆ f64      ┆ f64       ┆ f64      │
+╞═════════════════════════════════╪═══════╪════════╪═══════════╪═══╪══════════╪══════════╪═══════════╪══════════╡
+│ GMILKTNLFGHTYQFKSITDVLAKANEEKS… ┆ 1     ┆ 455    ┆ 0.083516  ┆ … ┆ 0.076923 ┆ 0.07033  ┆ 0.008791  ┆ 0.024176 │
+│ MAHHHHHHMSFFRMKRRLNFVVKRGIEELW… ┆ 0     ┆ 240    ┆ 0.020833  ┆ … ┆ 0.025    ┆ 0.025    ┆ 0.0125    ┆ 0.041667 │
+│ MGSDKIHHHHHHMEKSIQDTIHGVIKLEDW… ┆ 0     ┆ 399    ┆ 0.070175  ┆ … ┆ 0.030075 ┆ 0.105263 ┆ 0.005013  ┆ 0.037594 │
+│ MEKYIHSVEDYHRLISYLENNLNYEDSVVN… ┆ 0     ┆ 221    ┆ 0.031674  ┆ … ┆ 0.058824 ┆ 0.054299 ┆ 0.00905   ┆ 0.063348 │
+│ MSLTDSFTVRSIEGVCFRYPLATPVVTSFG… ┆ 0     ┆ 384    ┆ 0.1171875 ┆ … ┆ 0.028646 ┆ 0.072917 ┆ 0.0234375 ┆ 0.010417 │
+└─────────────────────────────────┴───────┴────────┴───────────┴───┴──────────┴──────────┴───────────┴──────────┘
+#+end_example
+
+#+begin_quote
+This creates 20 new columns, one for each standard amino acid, containing the fraction of that amino acid in each protein. While simple, amino acid composition captures important properties: proteins rich in charged residues (K, R, E, D) tend to be soluble, while those heavy in hydrophobic residues (V, I, L, F) may aggregate.
+
+#+end_quote
+
+so there are some chacteristics that we can infere by looking at the aa composition of the protein sequence.
+
+
+
+****** 3. Protein File Formats: THe languages of Structural Biology
+#+begin_quote
+The computational biology community has developed standardized file formats for storing protein data. Understanding these formats is essential because they are the raw materials from which you build datasets. The two most important formats are FASTA for sequences and PDB for three-dimensional structures.
+
+
+#+end_quote
+- FASTA: sequences
+- PDB: 3D structures
+
+
+
+******* 3.0 Download sequences
+#+begin_src python
+# Download sample sequences
+from Bio import SeqIO
+import urllib.request
+
+url = "https://rest.uniprot.org/uniprotkb/stream?format=fasta&query=reviewed:true&size=1000"
+urllib.request.urlretrieve(url, "data/sample/uniprot_sample.fasta")
+#+end_src
+
+******* 3.1 FASTA: The universal sequence format
+#+begin_quote
+FASTA is beautifully simple: a header line starting with `>` followed by one or more lines of sequence. The header typically contains identifiers and annotations, while the sequence uses single-letter amino acid codes:
+#+end_quote
+#+begin_example
+>sp|P0A6Y8|DNAK_ECOLI Chaperone protein DnaK
+MGKIIGIDLGTTNSCVAIMDGTTPRVLENAEGDRTTPSIIAYTQDGETLVGQPAKRQAVT
+NPQNTLFAIKRLIGRRFQDEEVQRDVSIMPFKIIAADNGDAWVEVKGQKMAPPQISAEVL
+...
+#+end_example
+
+#+begin_quote
+The header in this example follows UniProt conventions: `sp` indicates Swiss-Prot (curated database), `P0A6Y8` is the accession number, `DNAK_ECOLI` is the entry name, and the rest describes the protein. Different databases use different header conventions, so always check the source.
+#+end_quote
+
+******* 3.2 Parsing FASTA with Biopython
+#+begin_quote
+Biopython is the standard library for biological file parsing in Python. Its `SeqIO` module handles many sequence formats with a consistent interface:
+
+#+end_quote
+
+#+begin_src python
+from Bio import SeqIO
+
+def load_fasta(filepath):
+    """Load sequences from FASTA file."""
+    sequences = {}
+    for record in SeqIO.parse(filepath, "fasta"):
+        sequences[record.id] = str(record.seq)
+    return sequences
+
+# Load and examine
+seqs = load_fasta("data/sample/uniprot_sample.fasta")
+
+for name, seq in list(seqs.items())[:3]:
+    print(f"{name}: {len(seq)} residues")
+#+end_src
+
+#+begin_quote
+The `SeqIO.parse()` function returns an iterator of SeqRecord objects, each containing the sequence and metadata. This design handles files of any size efficiently, reading one record at a time rather than loading everything into memory.
+#+end_quote
+
+The function ~SedqIO.parse()~ return a iterator which will generate a ~SeqRecord~ object that contains the sequence (Seq object),id, and descriptionl
+
+******* 3.3 PDB: The format for 3D Structures
+#+begin_quote
+While FASTA captures the *sequence* of a protein, the **PDB format** captures its *structure*: the three-dimensional positions of every atom. PDB files are fixed-width text files with a specific column layout that dates back to the punch card era:
+#+end_quote
+#+begin_example
+ATOM      1  N   MET A   1      27.340  24.430   2.614  1.00  9.67           N
+ATOM      2  CA  MET A   1      26.266  25.413   2.842  1.00 10.38           C
+ATOM      3  C   MET A   1      26.913  26.639   3.531  1.00  9.62           C
+...
+#+end_example
+
+#+begin_quote
+Understanding the column layout is essential for writing custom parsers:
+
+- **Columns 1-6**: Record type (ATOM for coordinates)
+- **Columns 7-11**: Atom serial number
+- **Columns 13-16**: Atom name (N, CA, C, O for backbone; varies for side chains)
+- **Columns 18-20**: Residue name (three-letter code like MET, ALA)
+- **Column 22**: Chain identifier
+- **Columns 23-26**: Residue sequence number
+- **Columns 31-54**: X, Y, Z coordinates in Angstroms
+
+  The **CA** (alpha carbon) atoms are particularly important. Every amino acid has exactly one CA, located at the backbone's central carbon. The CA trace provides a simplified representation of protein structure that is widely used in machine learning.
+
+#+end_quote
+
+******* 3.4 Parsing PDB with Biotite
+#+begin_quote
+Biotite is a modern alternative to Biopython for structural biology, with clean APIs and good performance. Here is how to load a PDB file and extract CA coordinates:
+#+end_quote
+
+#+begin_src python
+import biotite.structure.io.pdb as pdb
+import biotite.structure as struc
+
+def load_pdb(filepath, chain="A"):
+    """Load structure from PDB file"""
+    pdb_file = pdb.PDBFile.read(filepath)
+    structure = pdb_file.get_structure(model=1)
+
+    # filter to protein atoms only
+    structure=structure[struc.filter_amino_acids(structure)]
+
+    # select chain
+    if chain:
+        structure = structure[structure.chain_id == chain]
+
+    return structure
+
+
+structure = load_pdb("data/sample/1UBQ.pdb")
+
+ca_mask = structure.atom_name == "CA"
+ca_coords = structure.coord[ca_mask]
+print(f"CA coordinates shape: {ca_coords.shape}")  # (76, 3)
+
+#+end_src
+#+begin_quote
+Ubiquitin (PDB ID: 1UBQ) is a small protein with 76 residues, so we get 76 CA coordinates. These coordinates can now be fed into any of our NumPy functions: compute the distance matrix, center the structure, or align it to another protein.
+
+#+end_quote
+
+******* Extra: 3d visualization with py3Dmol
+
+#+begin_src python
+import py3Dmol
+import webbrowser
+from pathlib import Path
+
+with open("data/sample/1UBQ.pdb") as f:
+    pdb_text = f.read()
+
+view = py3Dmol.view(width=800, height=600)
+view.addModel(pdb_text, "pdb")
+#view.setStyle({"cartoon": {"color": "spectrum"}})
+#view.setStyle({}, {"stick": {}})
+# view.setStyle({}, {
+#     "stick": {"radius": 0.15},
+#     "sphere": {"scale": 0.25}
+# })
+view.setStyle({}, {"sphere": {"scale": 0.3}})
+view.zoomTo()
+
+html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>py3Dmol viewer</title>
+</head>
+<body>
+  {view._make_html()}
+</body>
+</html>
+"""
+
+out = Path("viewer.html")
+out.write_text(html, encoding="utf-8")
+
+webbrowser.open(out.resolve().as_uri())
+#+end_src
+
+******* 3.5 Bridging Sequence and Structure
+#+begin_quote
+Sometimes you need to extract the sequence from a structure file, perhaps to verify consistency or because you only have the PDB. This requires mapping three-letter residue codes to single letters:
+#+end_quote
+#+begin_src python
+AA_3TO1 = {
+    'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F',
+    'GLY': 'G', 'HIS': 'H', 'ILE': 'I', 'LYS': 'K', 'LEU': 'L',
+    'MET': 'M', 'ASN': 'N', 'PRO': 'P', 'GLN': 'Q', 'ARG': 'R',
+    'SER': 'S', 'THR': 'T', 'VAL': 'V', 'TRP': 'W', 'TYR': 'Y'
+}
+
+def get_sequence(structure):
+    """Extract amino acid sequence from structure."""
+    residue_ids, residue_names = struc.get_residues(structure)
+    sequence = ''.join(AA_3TO1.get(name, 'X') for name in residue_names)
+    return sequence
+
+print(get_sequence(structure))
+#+end_src
+
+#+RESULTS:
+: MQIFVKTLTGKTITLEVEPSDTIENVKAKIQDKEGIPPDQQRLIFAGKQLEDGRTLSDYNIQKESTLHLVLRLRGG
+
+#+begin_quote
+Non-standard amino acids (modified residues, selenomethionine for crystallography) are mapped to 'X', the unknown residue code. Real-world PDB files often contain such surprises, so always validate your parsing.
+
+**Key insight**: FASTA and PDB are the raw materials of protein AI. Mastering their parsing with Biopython and Biotite gives you access to the wealth of publicly available protein data.
+#+end_quote
+
+
+** Architecture Lectures
+
+** Case Study Lectures
